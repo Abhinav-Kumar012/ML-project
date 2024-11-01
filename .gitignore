@@ -1,2 +1,7 @@
 .sec
 *.csv
+lib/
+include/
+lib64
+bin/
+pyvenv.cfg
