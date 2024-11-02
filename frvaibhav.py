@@ -85,24 +85,29 @@ def preprocess_data(df):
     return df
 
 # Load the datasets with low_memory option
-df_train = pd.read_csv("input/credit-dset/train.csv", low_memory=False)
+df_train = pd.read_csv("input/credit-dset/clean_trained.csv", low_memory=False)
 df_test = pd.read_csv("input/credit-dset/test.csv", low_memory=False)
+
+ 
+    
 
 # Print the column names to verify
 print("Train Columns:", df_train.columns.tolist())
 print("Test Columns:", df_test.columns.tolist())
 
+# df_train=df_train.drop(['Customer_ID'],axis=1)
+
 # Apply preprocessing to both train and test data
-df_train = preprocess_data(df_train)
+# df_train = preprocess_data(df_train)
 df_test = preprocess_data(df_test)
 
 # Map the target variable in training data
 credit_score_map = {'Poor': 0, 'Standard': 1, 'Good': 2}
-df_train['CreditScore'] = df_train['CreditScore'].map(credit_score_map)
+df_train['Credit_Score'] = df_train['Credit_Score'].map(credit_score_map)
 
 # Separate features and target
-X = df_train.drop(columns='CreditScore')
-y = df_train['CreditScore']
+X = df_train.drop(columns='Credit_Score')
+y = df_train['Credit_Score']
 
 # Define preprocessor for pipeline
 numerical_features = X.select_dtypes(include=['float64', 'int64']).columns
