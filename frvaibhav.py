@@ -1,171 +1,102 @@
-import numpy as np
 import pandas as pd
-from sklearn.model_selection import GridSearchCV
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.impute import KNNImputer, SimpleImputer
-from sklearn.pipeline import Pipeline
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.preprocessing import OneHotEncoder, LabelEncoder
 from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
+from sklearn.metrics import accuracy_score
+import numpy as np
 
-# Define preprocessing function for both train and test datasets
-def preprocess_data(df):
-    # Remove underscores in column names
-    df.columns = df.columns.str.replace('_', '')
+# Load datasets
+train_df = pd.read_csv('input/credit-dset/clean_trained.csv')
+test_df = pd.read_csv('input/credit-dset/test_cleaned_final.csv')
 
-    # Check for the expected columns before processing
-    expected_columns = [
-        'IncomeAnnual', 'BaseSalaryPerMonth', 'RateOfInterest', 
-        'CreditLimit', 'CurrentDebtOutstanding', 'RatioCreditUtilization', 
-        'PerMonthEMI', 'MonthlyInvestment', 'MonthlyBalance', 
-        'Age', 'TotalBankAccounts', 'TotalCurrentLoans', 
-        'Delayfromduedate', 'TotalDelayedPayments', 'CreditHistoryAge',
-        'LoanType'
-    ]
-    
-    for col in expected_columns:
-        if col not in df.columns:
-            print(f"Warning: Expected column '{col}' is missing from the DataFrame.")
-            # Handle the case as necessary (e.g., skip, fill with NaN, etc.)
+# Encode the target variable in the training data
+label_encoder = LabelEncoder()
+train_df['Credit_Score'] = label_encoder.fit_transform(train_df['Credit_Score'])
 
-    # Convert columns to numeric and handle non-numeric entries as NaN
-    columns_to_convert = [
-        'IncomeAnnual', 'BaseSalaryPerMonth', 'RateOfInterest', 
-        'CreditLimit', 'CurrentDebtOutstanding', 'RatioCreditUtilization', 
-        'PerMonthEMI', 'MonthlyInvestment', 'MonthlyBalance'
-    ]
-    int_columns_to_convert = [
-        'Age', 'TotalBankAccounts', 'TotalCurrentLoans', 
-        'Delayfromduedate', 'TotalDelayedPayments'
-    ]
-    
-    for col in columns_to_convert + int_columns_to_convert:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+# Columns to label encode
+label_encode_cols = ['Month', 'Profession', 'Credit_Mix', 'Payment_of_Min_Amount', 'Payment_Behaviour']
 
-    # Clip outliers
-    def clip_outliers(df, column, lower=0.05, upper=0.95):
-        lower_bound = df[column].quantile(lower)
-        upper_bound = df[column].quantile(upper)
-        df[column] = df[column].clip(lower_bound, upper_bound)
-        
-    for col in columns_to_convert + int_columns_to_convert:
-        if col in df.columns:
-            clip_outliers(df, col)
-    
-    # Convert 'CreditHistoryAge' to months and split into years and months
-    def convert_years_months_to_months(age_str):
-        if isinstance(age_str, str):
-            years = int(age_str.split()[0])
-            months = int(age_str.split()[3])
-            return years * 12 + months
-        return np.nan
+# Combine train and test data for encoding
+combined_df = pd.concat([train_df[label_encode_cols], test_df[label_encode_cols]])
 
-    if 'CreditHistoryAge' in df.columns:
-        df['CreditHistoryAgeMonths'] = df['CreditHistoryAge'].apply(convert_years_months_to_months)
-    
-    # Feature Engineering: Financial Ratios
-    df['DebtIncomeRatio'] = df['CurrentDebtOutstanding'] / (df['IncomeAnnual'] + 1)
-    df['IncomeCreditLimitRatio'] = df['IncomeAnnual'] / (df['CreditLimit'] + 1)
-    df['DebtCreditLimitRatio'] = df['CurrentDebtOutstanding'] / (df['CreditLimit'] + 1)
-    df['MonthlyBalanceToIncome'] = df['MonthlyBalance'] / (df['IncomeAnnual'] / 12 + 1)
-    
-    # Impute missing values using KNN for numerical and mode for categorical
-    numerical_features = df.select_dtypes(include=['float64', 'int64']).columns
-    categorical_features = df.select_dtypes(include=['object']).columns
-    
-    # KNN Imputer for numerical features
-    knn_imputer = KNNImputer()
-    df[numerical_features] = knn_imputer.fit_transform(df[numerical_features])
-    
-    # Mode imputer for categorical features
-    categorical_imputer = SimpleImputer(strategy='most_frequent')
-    df[categorical_features] = categorical_imputer.fit_transform(df[categorical_features])
-    
-    return df
+# Apply label encoding to each specified column
+for col in label_encode_cols:
+    le = LabelEncoder()
+    combined_df[col] = le.fit_transform(combined_df[col])
+    train_df[col] = le.transform(train_df[col])
+    test_df[col] = le.transform(test_df[col])
 
-# Load the datasets with low_memory option
-df_train = pd.read_csv("input/credit-dset/clean_trained.csv", low_memory=False)
-df_test = pd.read_csv("input/credit-dset/test.csv", low_memory=False)
+# Define features (X) and target (y)
+X = train_df.drop(columns=['Credit_Score', 'Number'])  # Exclude target and unnecessary columns
+y = train_df['Credit_Score']
 
+# Split data into training and validation sets
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Identify remaining categorical columns
+categorical_cols = X.select_dtypes(include=['object']).columns.tolist()
+
+# Set up column transformer for one-hot encoding of remaining categorical features
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), categorical_cols),
+    ], remainder='passthrough')
+
+# Define parameter grids for RandomizedSearchCV
+rf_param_grid = {
  
-    
-
-# Print the column names to verify
-print("Train Columns:", df_train.columns.tolist())
-print("Test Columns:", df_test.columns.tolist())
-
-# df_train=df_train.drop(['Customer_ID'],axis=1)
-
-# Apply preprocessing to both train and test data
-# df_train = preprocess_data(df_train)
-df_test = preprocess_data(df_test)
-
-# Map the target variable in training data
-credit_score_map = {'Poor': 0, 'Standard': 1, 'Good': 2}
-df_train['Credit_Score'] = df_train['Credit_Score'].map(credit_score_map)
-
-# Separate features and target
-X = df_train.drop(columns='Credit_Score')
-y = df_train['Credit_Score']
-
-# Define preprocessor for pipeline
-numerical_features = X.select_dtypes(include=['float64', 'int64']).columns
-numerical_pipeline = Pipeline([('scaler', StandardScaler())])
-
-categorical_features = X.select_dtypes(include=['object']).columns
-categorical_pipeline = Pipeline([
-    ('encoder', OneHotEncoder(handle_unknown='ignore'))
-])
-
-preprocessor = ColumnTransformer([
-    ('num', numerical_pipeline, numerical_features),
-    ('cat', categorical_pipeline, categorical_features)
-])
-
-# Initialize classifiers
-xgb_model = XGBClassifier(learning_rate=0.05, max_depth=6, n_estimators=300, random_state=4, eval_metric='mlogloss')
-rf_model = RandomForestClassifier(random_state=42)
-
-# Define the pipeline for each classifier
-xgb_pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', xgb_model)])
-rf_pipeline = Pipeline([('preprocessor', preprocessor), ('classifier', rf_model)])
-
-# Parameter grid for tuning
-param_grid_xgb = {
-    'classifier__learning_rate': [0.05, 0.1],
-    'classifier__max_depth': [6, 8],
-    'classifier__n_estimators': [100, 200]
+    'classifier__max_depth': [10, 20],
+    'classifier__min_samples_split': [2, 5, 10],
+    'classifier__min_samples_leaf': [1, 2, 4],
+    'classifier__bootstrap': [True, False]
 }
 
-param_grid_rf = {
-    'classifier__n_estimators': [100, 200],
-    'classifier__max_depth': [6, 8]
+xgb_param_grid = {
+    'classifier__n_estimators': np.arange(100, 1000, 100),
+    'classifier__learning_rate': [0.01, 0.05, 0.1, 0.2],
+    'classifier__max_depth': [3, 5, 7, 9, 11],
+    'classifier__subsample': [0.6, 0.8, 1.0],
+    'classifier__colsample_bytree': [0.6, 0.8, 1.0]
 }
 
-# Perform grid search for both models
-grid_search_xgb = GridSearchCV(xgb_pipeline, param_grid_xgb, scoring='accuracy', cv=3, n_jobs=-1, verbose=1)
-grid_search_rf = GridSearchCV(rf_pipeline, param_grid_rf, scoring='accuracy', cv=3, n_jobs=-1, verbose=1)
+# Define pipelines for both models
+rf_pipeline = Pipeline(steps=[('preprocessor', preprocessor), 
+                              ('classifier', RandomForestClassifier(random_state=42))])
 
-# Fit models and get best estimator
-grid_search_xgb.fit(X, y)
-grid_search_rf.fit(X, y)
+xgb_pipeline = Pipeline(steps=[('preprocessor', preprocessor), 
+                               ('classifier', XGBClassifier(eval_metric='mlogloss', random_state=42))])
 
-# Choose the model with the best cross-validated score
-if grid_search_xgb.best_score_ > grid_search_rf.best_score_:
-    best_pipeline = grid_search_xgb.best_estimator_
-    print("Using XGBoost with cross-validated accuracy:", grid_search_xgb.best_score_)
-else:
-    best_pipeline = grid_search_rf.best_estimator_
-    print("Using RandomForest with cross-validated accuracy:", grid_search_rf.best_score_)
+# Perform RandomizedSearchCV for RandomForest
+rf_search = RandomizedSearchCV(rf_pipeline, rf_param_grid, n_iter=10, scoring='accuracy', cv=3, random_state=42, n_jobs=-1)
+rf_search.fit(X_train, y_train)
+best_rf_pipeline = rf_search.best_estimator_
+rf_best_accuracy = accuracy_score(y_val, best_rf_pipeline.predict(X_val))
+print(f"Tuned RandomForest Validation Accuracy: {rf_best_accuracy:.4f}")
 
-# Predict on the test set
-test_predictions = best_pipeline.predict(df_test)
-test_predictions_labels = pd.Series(test_predictions).map({v: k for k, v in credit_score_map.items()})
+# Perform RandomizedSearchCV for XGBoost
+xgb_search = RandomizedSearchCV(xgb_pipeline, xgb_param_grid, n_iter=10, scoring='accuracy', cv=3, random_state=42, n_jobs=-1)
+xgb_search.fit(X_train, y_train)
+best_xgb_pipeline = xgb_search.best_estimator_
+xgb_best_accuracy = accuracy_score(y_val, best_xgb_pipeline.predict(X_val))
+print(f"Tuned XGBoost Validation Accuracy: {xgb_best_accuracy:.4f}")
 
-# Prepare the submission file
-test_ids = df_test['ID'].copy()
-submission = pd.DataFrame({'ID': test_ids, 'CreditScore': test_predictions_labels})
+# Choose the best model
+best_model = best_xgb_pipeline if xgb_best_accuracy > rf_best_accuracy else best_rf_pipeline
+
+# Prepare test data predictions for submission
+test_features = test_df.drop(columns=['ID', 'Number'], errors='ignore')  # Exclude unnecessary columns
+test_features_transformed = preprocessor.transform(test_features)
+test_preds = best_model.predict(test_features_transformed)
+
+# Create submission dataframe
+submission = pd.DataFrame({
+    'ID': test_df['ID'],
+    'Predicted': label_encoder.inverse_transform(test_preds)
+})
+
+# Save to CSV
 submission.to_csv('submission.csv', index=False)
-
-print("Submission file 'submission.csv' created successfully!")
+print("Submission file 'submission.csv' created successfully.")
