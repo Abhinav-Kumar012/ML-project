@@ -9,7 +9,7 @@ import numpy as np
 
 # Load datasets
 train_df = pd.read_csv('input/credit-dset/clean_trained.csv')
-test_df = pd.read_csv('input/credit-dset/test_cleaned_final.csv')
+test_df = pd.read_csv('input/credit-dset/test_cleaned.csv')
 
 # Encode the target variable in the training data
 label_encoder = LabelEncoder()
