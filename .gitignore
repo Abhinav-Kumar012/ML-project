@@ -4,4 +4,7 @@ lib/
 include/
 lib64
 bin/
+etc/
+share/
 pyvenv.cfg
+notebooks/.ipynb_checkpoints/
